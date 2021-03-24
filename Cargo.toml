@@ -7,4 +7,8 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-gdl = {version = "0.2.2", path = "../nom-gdl" }
+# gdl = {version = "0.2.2", path = "../nom-gdl" }
+gdl = "0.2.3"
+
+[dev-dependencies]
+trim-margin = "0.1.0"
