@@ -1,125 +1,20 @@
-use std::{
-    collections::HashMap,
-    fmt::{Debug, Display},
-    hash::Hash,
-};
+use std::collections::HashMap;
 
-use gdl::CypherValue;
+use graph::PropertyIterator;
 
-type NodesIterator<'a, T> = Box<dyn Iterator<Item = T> + 'a>;
-type LabelIterator<'a, T> = Box<dyn Iterator<Item = T> + 'a>;
-type PropertyIterator<'a, K, V> = Box<dyn Iterator<Item = (K, V)> + 'a>;
+mod gdl;
+mod graph;
 
-pub trait Graph {
-    type NodeId: Debug + Hash + Eq + ?Sized;
+pub use graph::Graph;
 
-    type NodeLabel: Display + ?Sized;
-
-    type RelationshipType: Display + ?Sized;
-
-    type PropertyKey: Display + ?Sized;
-
-    type PropertyValue: Display + ?Sized;
-
-    fn nodes(&self) -> NodesIterator<&Self::NodeId>;
-
-    fn node_labels(&self, node_id: &Self::NodeId) -> LabelIterator<&Self::NodeLabel>;
-
-    fn node_properties(
-        &self,
-        node_id: &Self::NodeId,
-    ) -> PropertyIterator<&Self::PropertyKey, &Self::PropertyValue>;
-
-    fn outgoing_relationships<'a, 'b: 'a>(
-        &'a self,
-        node_id: &'b Self::NodeId,
-    ) -> PropertyIterator<
-        (&'a Self::NodeId, &'a Self::RelationshipType),
-        PropertyIterator<&'a Self::PropertyKey, &'a Self::PropertyValue>,
-    >;
-
-    fn incoming_relationships<'a, 'b: 'a>(
-        &'a self,
-        node_id: &'b Self::NodeId,
-    ) -> PropertyIterator<
-        (&'a Self::NodeId, &'a Self::RelationshipType),
-        PropertyIterator<&'a Self::PropertyKey, &'a Self::PropertyValue>,
-    >;
+pub fn assert_graph_eq(left: &impl Graph, right: &impl Graph) -> bool {
+    let left = canonicalize(left);
+    let right = canonicalize(right);
+    left.eq(&right)
 }
 
-impl Graph for gdl::Graph {
-    type NodeId = str;
-
-    type NodeLabel = str;
-
-    type RelationshipType = str;
-
-    type PropertyKey = str;
-
-    type PropertyValue = CypherValue;
-
-    fn nodes(&self) -> NodesIterator<&Self::NodeId> {
-        Box::new(self.nodes().map(|node| node.variable()))
-    }
-
-    fn node_labels(&self, node_id: &Self::NodeId) -> LabelIterator<&Self::NodeLabel> {
-        let node = self
-            .get_node(node_id)
-            .unwrap_or_else(|| panic!("Node id {} not found", node_id));
-        Box::new(node.labels())
-    }
-
-    fn node_properties(
-        &self,
-        node_id: &Self::NodeId,
-    ) -> PropertyIterator<&Self::PropertyKey, &Self::PropertyValue> {
-        let node = self
-            .get_node(node_id)
-            .unwrap_or_else(|| panic!("Node id {} not found", node_id));
-        Box::new(node.properties())
-    }
-
-    fn outgoing_relationships<'a, 'b: 'a>(
-        &'a self,
-        node_id: &'b Self::NodeId,
-    ) -> PropertyIterator<
-        'a,
-        (&'a Self::NodeId, &'a Self::RelationshipType),
-        PropertyIterator<'a, &'a Self::PropertyKey, &'a Self::PropertyValue>,
-    > {
-        Box::new(self.relationships().filter_map(move |rel| {
-            (rel.source() == node_id).then(|| {
-                let key = (rel.target(), rel.rel_type().unwrap_or(""));
-                let value: Box<dyn Iterator<Item = (&str, &CypherValue)>> =
-                    Box::new(rel.properties());
-                (key, value)
-            })
-        }))
-    }
-
-    fn incoming_relationships<'a, 'b: 'a>(
-        &'a self,
-        node_id: &'b Self::NodeId,
-    ) -> PropertyIterator<
-        'a,
-        (&'a Self::NodeId, &'a Self::RelationshipType),
-        PropertyIterator<'a, &'a Self::PropertyKey, &'a Self::PropertyValue>,
-    > {
-        Box::new(self.relationships().filter_map(move |rel| {
-            (rel.target() == node_id).then(|| {
-                let key = (rel.source(), rel.rel_type().unwrap_or(""));
-                let value: Box<dyn Iterator<Item = (&str, &CypherValue)>> =
-                    Box::new(rel.properties());
-                (key, value)
-            })
-        }))
-    }
-}
-
-pub fn canonicalize<G: Graph>(graph: &G) -> String {
+fn canonicalize<G: Graph>(graph: &G) -> String {
     let canonical_nodes = canonical_nodes(graph);
-
-    dbg!(&canonical_nodes);
 
     let mut out_adjacencies = HashMap::<&G::NodeId, Vec<String>>::new();
     let mut in_adjacencies = HashMap::<&G::NodeId, Vec<String>>::new();
@@ -155,9 +50,6 @@ pub fn canonicalize<G: Graph>(graph: &G) -> String {
         )
     });
 
-    dbg!(&out_adjacencies);
-    dbg!(&in_adjacencies);
-
     let mut canonical_out_adjacencies = out_adjacencies
         .into_iter()
         .map(|(node, mut relationships)| {
@@ -174,8 +66,8 @@ pub fn canonicalize<G: Graph>(graph: &G) -> String {
         })
         .collect::<HashMap<_, _>>();
 
-    dbg!(&canonical_out_adjacencies);
-    dbg!(&canonical_in_adjacencies);
+    &canonical_out_adjacencies;
+    &canonical_in_adjacencies;
 
     let mut matrix = canonical_nodes
         .into_iter()
@@ -238,11 +130,96 @@ fn canonical_properties<G: Graph>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use ::gdl::Graph as GdlGraph;
     use trim_margin::MarginTrimmable;
 
+    fn from_gdl(gdl: &str) -> GdlGraph {
+        GdlGraph::from(gdl).unwrap()
+    }
+
     #[test]
-    fn canonical_labels() {
-        let g = gdl::Graph::from(
+    fn test_topology_equals() {
+        let g1 = from_gdl("(a), (b), (a)-->(b)");
+        let g2 = from_gdl("(a), (b), (a)-->(b)");
+
+        assert_eq!(canonicalize(&g1), canonicalize(&g2))
+    }
+
+    #[test]
+    fn test_topology_not_equals() {
+        let g1 = from_gdl("(a), (b), (a)-->(b)");
+        let g2 = from_gdl("(a), (a)-->(a)");
+        assert_ne!(canonicalize(&g1), canonicalize(&g2))
+    }
+
+    #[test]
+    fn test_topology_and_node_labels_equals() {
+        let g1 = from_gdl("(a:A:B), (b:B), (a)-->(b)");
+        let g2 = from_gdl("(a:A:B), (b:B), (a)-->(b)");
+        assert_eq!(canonicalize(&g1), canonicalize(&g2))
+    }
+
+    #[test]
+    fn test_topology_and_node_labels_not_equals() {
+        let g1 = from_gdl("(a:A:B), (b:B), (a)-->(b)");
+        let g2 = from_gdl("(a:A:B), (b:C), (a)-->(b)");
+        assert_ne!(canonicalize(&g1), canonicalize(&g2))
+    }
+
+    #[test]
+    fn test_topology_and_data_equals() {
+        let g1 = from_gdl("(a {a:2, w:1.0}), (b {w:2, a:3, q:42.0}), (a)-->(b)");
+        let g2 = from_gdl("(a {a:2, w:1.0}), (b {w:2, a:3, q:42.0}), (a)-->(b)");
+        assert_eq!(canonicalize(&g1), canonicalize(&g2))
+    }
+
+    #[test]
+    fn test_parallel_edges() {
+        let g1 = from_gdl("(a), (b), (a)-[{w:1}]->(b), (a)-[{w:2}]->(b)");
+        let g2 = from_gdl("(a), (b), (a)-[{w:2}]->(b), (a)-[{w:1}]->(b)");
+        assert_eq!(canonicalize(&g1), canonicalize(&g2))
+    }
+
+    #[test]
+    fn test_loop() {
+        let g1 = from_gdl("(a), (b), (a)-[{w:1}]->(a), (a)-[{w:2}]->(b)");
+        let g2 = from_gdl("(a), (b), (a)-[{w:2}]->(b), (a)-[{w:1}]->(a)");
+        assert_eq!(canonicalize(&g1), canonicalize(&g2))
+    }
+
+    #[test]
+    fn test_cycle() {
+        let g1 = from_gdl("(a {v:1}), (b {v:2}), (c {v:3}), (a)-->(b)-->(c)-->(a)");
+        let g2 = from_gdl("(a {v:2}), (b {v:3}), (c {v:1}), (a)-->(b)-->(c)-->(a)");
+        assert_eq!(canonicalize(&g1), canonicalize(&g2))
+    }
+
+    #[test]
+    fn test_complete_graph() {
+        let g1 = from_gdl(
+            "(a {v:1}), (b {v:2}), (c {v:3}), (b)<--(a)-->(c), (a)<--(b)-->(c), (a)<--(c)-->(b)",
+        );
+        let g2 = from_gdl(
+            "(a {v:1}), (b {v:2}), (c {v:3}), (b)<--(a)-->(b), (a)<--(b)-->(c), (a)<--(c)-->(b)",
+        );
+        assert_ne!(canonicalize(&g1), canonicalize(&g2))
+    }
+
+    #[test]
+    fn test_complete_homogenic_graph() {
+        let g1 = from_gdl(
+            "(a {v:1}), (b {v:1}), (c {v:1}), (b)<--(a)-->(c), (a)<--(b)-->(c), (a)<--(c)-->(b)",
+        );
+        let g2 = from_gdl(
+            "(a {v:1}), (b {v:1}), (c {v:1}), (b)<--(a)-->(b), (a)<--(b)-->(c), (a)<--(c)-->(b)",
+        );
+        assert_ne!(canonicalize(&g1), canonicalize(&g2))
+    }
+
+    #[test]
+    fn test_canonicalize() {
+        let g = GdlGraph::from(
             r#"
               (a:A { c: 42, b: 37, a: 13 })
             , (b:B { bar: 84 })
