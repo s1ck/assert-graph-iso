@@ -139,7 +139,7 @@ mod tests {
     use trim_margin::MarginTrimmable;
 
     fn from_gdl(gdl: &str) -> GdlGraph {
-        GdlGraph::from(gdl).unwrap()
+        gdl.parse::<GdlGraph>().unwrap()
     }
 
     #[test]
@@ -223,16 +223,15 @@ mod tests {
 
     #[test]
     fn test_canonicalize() {
-        let g = GdlGraph::from(
-            r#"
+        let g = r#"
               (a:A { c: 42, b: 37, a: 13 })
             , (b:B { bar: 84 })
             , (c:C { baz: 19, boz: 84 })
             , (a)-[:REL { c: 42, b: 37, a: 13 }]->(b)
             , (b)-[:REL { c: 12 }]->(a)
             , (b)-[:REL { a: 23 }]->(c)
-            "#,
-        )
+            "#
+        .parse::<GdlGraph>()
         .unwrap();
 
         let expected = "
