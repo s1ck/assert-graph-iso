@@ -2,8 +2,9 @@ use std::collections::HashMap;
 
 use graph::PropertyIterator;
 
-mod gdl;
-mod graph;
+#[cfg(feature = "gdl")]
+pub mod gdl;
+pub mod graph;
 
 pub use graph::Graph;
 
@@ -127,7 +128,10 @@ fn canonical_properties<G: Graph>(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(not(feature = "gdl"), test))]
+compile_error!("Please run tests with --all-features");
+
+#[cfg(all(feature = "gdl", test))]
 mod tests {
     use super::*;
 
