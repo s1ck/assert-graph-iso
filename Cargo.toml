@@ -1,10 +1,12 @@
 [package]
-name = "assert-graph-iso"
-version = "0.1.0"
-authors = ["Martin Junghanns <nerdfaktor@mailbox.org>", "Paul Horn <developer@knutwalker.de>"]
+authors = ["Martin Junghanns <nerdfaktor42@mailbox.org>", "Paul Horn <developer@knutwalker.de>"]
 edition = "2018"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+license = "Apache-2.0 OR MIT"
+description = "Test utility for checking if two graphs are isomorphic."
+keywords = ["graph", "isomorphism", "test", "gdl", "cypher"]
+name = "assert-graph-iso"
+repository = "https://github.com/s1ck/assert-graph-iso"
+version = "0.1.0"
 
 [dependencies]
 gdl = {version = "0.2.4", optional = true}
